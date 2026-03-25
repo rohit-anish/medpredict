@@ -29,6 +29,11 @@ vital-app/
     └── package.json
 ```
 
+## 🔐 Demo Credentials during run
+
+Username: admin  
+Password: admin123
+
 ---
 
 ## 🚀 Setup
@@ -184,3 +189,4 @@ In `frontend/src/App.jsx`, toggle the `demoMode` switch in the top-right corner:
 | Backend API | FastAPI, uvicorn, joblib |
 | Frontend | React 18, Vite, Recharts |
 | Data | 100K records, 18 features, XLSX |
+
