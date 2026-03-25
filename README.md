@@ -1,6 +1,6 @@
 # 🫀 MedPredict — AI-Based Vital Analysis & Health Prediction System
 
-> Hackathon Project · 24H Build · 2–3 Person Team
+An intelligent application that collects and analyzes human vital parameters using Machine Learning to predict potential health conditions in real time.
 
 ---
 
@@ -31,7 +31,7 @@ vital-app/
 
 ---
 
-## 🚀 Setup in Order
+## 🚀 Setup
 
 ### STEP 1 — Train the ML Model
 
@@ -41,11 +41,11 @@ pip install -r ../backend/requirements.txt
 python train_model.py
 ```
 
-**Expected output:**
-- RF Accuracy: ~100%  
-- Files saved: `model_artifacts/model.pkl`, `scaler.pkl`, `label_encoder.pkl`, `model_meta.json`
+> ⚠️ Place `final_dataset_with_ecg.xlsx` inside the `ml/` folder before running.
 
-> ⚠️ Make sure `DATASET_PATH` in `train_model.py` points to your `.xlsx` file.
+**Expected output:**
+- RF Accuracy: ~100%
+- Files saved: `model_artifacts/model.pkl`, `scaler.pkl`, `label_encoder.pkl`, `model_meta.json`
 
 ---
 
@@ -91,8 +91,8 @@ npm run dev
 
 ## 🔌 Connecting Frontend to Backend
 
-In `frontend/src/App.jsx`, toggle the `demoMode` switch in the top-right:
-- **Demo Mode ON** → works offline, uses heuristic simulation
+In `frontend/src/App.jsx`, toggle the `demoMode` switch in the top-right corner:
+- **Demo Mode ON** → works fully offline using heuristic simulation
 - **Demo Mode OFF** → calls `http://localhost:8000/predict` (backend must be running)
 
 ---
@@ -103,17 +103,17 @@ In `frontend/src/App.jsx`, toggle the `demoMode` switch in the top-right:
 |--------|-------|
 | Dataset | 100,000 patient records |
 | Features | 14 vital + derived parameters |
-| Target | Risk Category (High / Low Risk) |
+| Target | Risk Category (High Risk / Low Risk) |
 | Best Model | RandomForest (100 trees, depth 12) |
 | Accuracy | 100% on test set |
 | Train/Test Split | 80/20 stratified |
 
 **Top Features by Importance:**
-1. BMI (51.3%)
-2. Heart Rate (25.7%)
-3. Weight (9.9%)
-4. Height (6.7%)
-5. ECG QT Interval (5.8%)
+1. BMI — 51.3%
+2. Heart Rate — 25.7%
+3. Weight — 9.9%
+4. Height — 6.7%
+5. ECG QT Interval — 5.8%
 
 ---
 
@@ -173,25 +173,6 @@ In `frontend/src/App.jsx`, toggle the `demoMode` switch in the top-right:
 - **Feature Importance** — Bar chart of model's decision factors
 - **Derived Metrics** — BMI, MAP, Pulse Pressure, HRV
 - **History Tab** — Time-series trends + prediction log table
-
----
-
-## 🏁 Hackathon Pitch Flow (5 mins)
-
-1. **Problem** (30s) — Vital monitoring needs intelligent risk prediction
-2. **Solution** (30s) — ML model trained on 100K records, real-time dashboard
-3. **Demo** (3 min) — Input vitals → show alerts → show prediction → show history trend
-4. **Tech** (30s) — RandomForest → FastAPI → React + Recharts
-5. **Impact** (30s) — Deployable, extendable to real IoT sensor data
-
----
-
-## ⚡ Quick Hackathon Tips
-
-- **For demo:** Pre-load a "High Risk" example (HR=95, SpO2=93, SBP=145) and a "Low Risk" one
-- **Judges love:** Live switching between patients in History tab to show trends
-- **If API fails:** Demo Mode covers you — toggle it on
-- **Deploy frontend:** `npm run build` → drag `dist/` to [Vercel](https://vercel.com) for live URL
 
 ---
 
