@@ -1,0 +1,54 @@
+{
+  "model_type": "RandomForest",
+  "accuracy": 1.0,
+  "rf_accuracy": 1.0,
+  "gb_accuracy": 1.0,
+  "classes": [
+    "High Risk",
+    "Low Risk"
+  ],
+  "features": [
+    "Heart Rate",
+    "Respiratory Rate",
+    "Body Temperature",
+    "Oxygen Saturation",
+    "Systolic Blood Pressure",
+    "Diastolic Blood Pressure",
+    "Age",
+    "Weight (kg)",
+    "Height (m)",
+    "Derived_HRV",
+    "Derived_Pulse_Pressure",
+    "Derived_BMI",
+    "Derived_MAP",
+    "ECG_QT_Interval_ms"
+  ],
+  "feature_importances": {
+    "Derived_BMI": 0.5131,
+    "Heart Rate": 0.2572,
+    "Weight (kg)": 0.0991,
+    "Height (m)": 0.067,
+    "ECG_QT_Interval_ms": 0.0575,
+    "Body Temperature": 0.001,
+    "Oxygen Saturation": 0.001,
+    "Derived_HRV": 0.0009,
+    "Age": 0.0007,
+    "Derived_Pulse_Pressure": 0.0006,
+    "Derived_MAP": 0.0006,
+    "Systolic Blood Pressure": 0.0005,
+    "Diastolic Blood Pressure": 0.0004,
+    "Respiratory Rate": 0.0004
+  },
+  "train_samples": 80000,
+  "test_samples": 20000,
+  "confusion_matrix": [
+    [
+      10530,
+      0
+    ],
+    [
+      0,
+      9470
+    ]
+  ]
+}
