@@ -9,6 +9,7 @@ __pycache__/
 env/
 venv/
 .venv/
+.venv-1/
 pip-log.txt
 pip-delete-this-directory.txt
 .tox/
@@ -31,3 +32,18 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Build output
+frontend/dist/
+
+# Generated graph files
+graphify-out/
+repo_graph.dot
+
+# Binary ML artifacts
+*.pkl
+backend/model_artifacts/
+ml/model_artifacts/
+
+# Large data files
+*.csv

@@ -1,0 +1,49 @@
+digraph medpredict {
+  rankdir=LR;
+  node [shape=box, style=filled, fillcolor="#f5f5f5", color="#333333"];
+
+  subgraph cluster_root {
+    label="medpredict repository";
+    color="#a3a3a3";
+
+    subgraph cluster_backend {
+      label="backend";
+      color="#97c2fc";
+      "backend/main.py";
+      "backend/model_artifacts/model.pkl";
+      "backend/model_artifacts/scaler.pkl";
+      "backend/model_artifacts/label_encoder.pkl";
+      "backend/model_artifacts/model_meta.json";
+    }
+
+    subgraph cluster_frontend {
+      label="frontend/src";
+      color="#ffcc99";
+      "frontend/src/App.jsx";
+      "frontend/src/Login.jsx";
+    }
+
+    subgraph cluster_ml {
+      label="ml";
+      color="#b7e4c7";
+      "ml/train_model.py";
+      "ml/model_artifacts/model_meta.json";
+      "ml/human_vital_signs_dataset_with_ecg.csv";
+    }
+
+    "package.json";
+    "README.md";
+  }
+
+  "frontend/src/App.jsx" -> "frontend/src/Login.jsx" [label="imports", color="#5555ff"];
+  "frontend/src/App.jsx" -> "backend/main.py" [label="POST /predict", color="#007700"];
+  "backend/main.py" -> "backend/model_artifacts/model.pkl" [label="loads model", color="#aa0000"];
+  "backend/main.py" -> "backend/model_artifacts/scaler.pkl" [label="loads scaler", color="#aa0000"];
+  "backend/main.py" -> "backend/model_artifacts/label_encoder.pkl" [label="loads label encoder", color="#aa0000"];
+  "backend/main.py" -> "backend/model_artifacts/model_meta.json" [label="reads metadata", color="#aa0000"];
+  "backend/main.py" -> "frontend/src/App.jsx" [label="serves API", style="dashed", color="#777777"];
+  "ml/train_model.py" -> "ml/model_artifacts/model_meta.json" [label="generates metadata", color="#0077aa"];
+
+  "frontend/src/App.jsx" -> "package.json" [label="frontend package", style="dotted"];
+  "backend/main.py" -> "package.json" [label="backend runtime", style="dotted"];
+}

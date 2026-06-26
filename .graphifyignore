@@ -1,0 +1,28 @@
+README.md
+*.md
+
+# Virtual environments
+.venv/
+.venv/**
+.venv-1/
+.venv-1/**
+
+# Generated / build output
+graphify-out/
+frontend/dist/
+repo_graph.dot
+
+# Binary ML artifacts
+*.pkl
+backend/model_artifacts/
+ml/model_artifacts/
+
+# Large data files
+*.csv
+
+# Lock files
+package-lock.json
+frontend/package-lock.json
+
+# Git internals
+.git/
