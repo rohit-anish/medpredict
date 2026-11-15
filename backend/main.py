@@ -3,54 +3,33 @@ MEDPREDICT Health Prediction API
 Run: uvicorn main:app --reload --port 8000
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
-import joblib, json, numpy as np
+import joblib, json, os, numpy as np, pandas as pd
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import hashlib
-
-app = FastAPI()
-
-users_db = {}
-
-class User(BaseModel):
-    username: str
-    password: str
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-@app.post("/register")
-def register(user: User):
-    if user.username in users_db:
-        raise HTTPException(status_code=400, detail="User already exists")
-    
-    users_db[user.username] = hash_password(user.password)
-    return {"message": "User registered successfully"}
-
-@app.post("/login")
-def login(user: User):
-    if user.username not in users_db:
-        raise HTTPException(status_code=400, detail="User not found")
-    
-    if users_db[user.username] != hash_password(user.password):
-        raise HTTPException(status_code=400, detail="Invalid password")
-    
-    return {"message": "Login successful", "token": "dummy-token"}
+from auth import router as auth_router, current_user
 
 app = FastAPI(title="Vital Analysis API", version="1.0.0")
 
+# Which websites may call this API. In production set ALLOWED_ORIGINS to your
+# frontend URL(s), comma-separated, e.g. "https://medpredict.vercel.app".
+DEV_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173"
+ALLOWED_ORIGINS = [
+    o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", DEV_ORIGINS).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Auth: /register, /login, /me, /logout (see auth.py) ───────────────────────
+app.include_router(auth_router)
 
 # ── Load artifacts ─────────────────────────────────────────────────────────────
 BASE = Path(__file__).parent / "model_artifacts"
@@ -141,6 +120,14 @@ def generate_alerts(v: VitalInput) -> list:
 def root():
     return {"status": "ok", "message": "Vital Analysis API running"}
 
+@app.get("/health")
+def health():
+    # Used by Render's health check; also confirms the user database is reachable.
+    from auth import db
+    with db() as conn:
+        conn.execute("SELECT 1")
+    return {"status": "ok"}
+
 @app.get("/model/info")
 def model_info():
     return {
@@ -156,7 +143,7 @@ def model_info():
     }
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict(vitals: VitalInput):
+def predict(vitals: VitalInput, user: dict = Depends(current_user)):
     derived = compute_derived(vitals)
     alerts  = generate_alerts(vitals)
 
@@ -169,7 +156,8 @@ def predict(vitals: VitalInput):
         vitals.ecg_qt_interval_ms,
     ]
 
-    X = np.array(feature_vector).reshape(1, -1)
+    # Named columns, matching how the scaler was fitted (avoids sklearn's feature-name warning).
+    X = pd.DataFrame([feature_vector], columns=FEATURES)
     X_scaled = scaler.transform(X)
 
     pred_idx   = model.predict(X_scaled)[0]

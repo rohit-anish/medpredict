@@ -40,10 +40,14 @@ frontend/dist/
 graphify-out/
 repo_graph.dot
 
-# Binary ML artifacts
+# ML artifacts: backend/model_artifacts/ IS committed on purpose (the deployed
+# API loads the model from it, ~3 MB). Only ignore stray pickles elsewhere.
 *.pkl
-backend/model_artifacts/
-ml/model_artifacts/
+!backend/model_artifacts/*.pkl
+!ml/model_artifacts/*.pkl
 
 # Large data files
 *.csv
+
+# Local user database
+*.db

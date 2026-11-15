@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Login from "./Login";
+import Home from "./Home";
+import { api, session } from "./api";
+import { Brand } from "./ui";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import {
@@ -17,22 +20,27 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
-  Cell,
+  Legend,
 } from "recharts";
 
-// ── Colour palette ──────────────────────────────────────────────────────────
+// ── Palette (mirrors CSS vars in index.css) ─────────────────────────────────
 const C = {
-  bg: "#0d1117",
-  surface: "#161b22",
-  border: "#21262d",
-  accent: "#58a6ff",
-  green: "#3fb950",
-  red: "#f85149",
-  yellow: "#d29922",
-  purple: "#bc8cff",
-  text: "#e6edf3",
-  muted: "#8b949e",
+  ink: "#0d1417",
+  paper: "#ffffff",
+  muted: "#5d6970",
+  line: "#e2e7e9",
+  soft: "#f5f7f7",
+  alert: "#c4291f",
+  accent: "#0f766e",
+};
+
+const AXIS_TICK = { fill: C.muted, fontSize: 11, fontFamily: "IBM Plex Mono, monospace" };
+const TOOLTIP_STYLE = {
+  background: C.paper,
+  border: `2px solid ${C.ink}`,
+  borderRadius: 8,
+  fontFamily: "IBM Plex Mono, monospace",
+  fontSize: 12,
 };
 
 // ── Default form values ──────────────────────────────────────────────────────
@@ -156,142 +164,93 @@ function generateECG(qt = 380, hr = 75) {
   return pts;
 }
 
+const fmt = (v) => (typeof v === "number" ? v.toFixed(v % 1 === 0 ? 0 : 1) : v);
+const isOut = (v, [lo, hi]) => v < lo || v > hi;
+
 // ── Sub-components ───────────────────────────────────────────────────────────
-function VitalCard({ label, value, unit, range, trend }) {
+function VitalCard({ label, value, unit, range }) {
   const [lo, hi] = range || [null, null];
   const ok = lo === null || (value >= lo && value <= hi);
   const low = lo !== null && value < lo;
-  const color = ok ? C.green : low ? C.accent : C.red;
   return (
-    <div
-      style={{
-        background: C.surface,
-        border: `1px solid ${C.border}`,
-        borderRadius: 8,
-        padding: "14px 18px",
-        borderLeft: `3px solid ${color}`,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          color: C.muted,
-          marginBottom: 4,
-          letterSpacing: 1,
-        }}
-      >
-        {label.toUpperCase()}
+    <div className={`vital${ok ? "" : " bad"}`}>
+      <div className="vital-top">
+        <span className="vital-label">{label}</span>
+        <span className={`pill ${ok ? "soft" : "bad"}`}>{ok ? "Normal" : low ? "↓ Low" : "↑ High"}</span>
       </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-        <span
-          style={{
-            fontSize: 26,
-            fontWeight: 700,
-            color,
-            fontFamily: "Poppins, sans-serif",
-          }}
-        >
-          {typeof value === "number"
-            ? value.toFixed(value % 1 === 0 ? 0 : 1)
-            : value}
-        </span>
-        <span style={{ fontSize: 12, color: C.muted }}>{unit}</span>
+      <div className="vital-value">
+        {fmt(value)}
+        <small>{unit}</small>
       </div>
-      {range && (
-        <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-          Normal: {lo}–{hi} {unit}
-          {!ok && (
-            <span style={{ color, marginLeft: 6 }}>
-              ● {low ? "LOW" : "HIGH"}
-            </span>
-          )}
+      {range && <div className="vital-sub">ref {lo}–{hi}</div>}
+    </div>
+  );
+}
+
+function AlertRow({ alert }) {
+  const critical = alert.severity === "critical";
+  return (
+    <div className="alert-row">
+      <span className={`pill ${critical ? "bad" : "warn"}`}>{critical ? "Critical" : "Warning"}</span>
+      <div>
+        <div className="alert-param">{alert.param}</div>
+        <div className="alert-msg">{alert.message}</div>
+      </div>
+    </div>
+  );
+}
+
+function Meter({ label, value, alert }) {
+  const pct = Math.max(0, Math.min(value, 1)) * 100;
+  return (
+    <div className="meter">
+      <div className="meter-top">
+        <span>{label}</span>
+        <span className="mono">{pct.toFixed(0)}%</span>
+      </div>
+      <div className="meter-track">
+        <div className={`meter-fill${alert ? " alert" : ""}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function Box({ title, meta, children, className = "", bodyClass = "box-body" }) {
+  return (
+    <div className={`box ${className}`}>
+      {title && (
+        <div className="box-head">
+          <span>{title}</span>
+          {meta !== undefined && <span className="meta">{meta}</span>}
         </div>
       )}
+      <div className={bodyClass}>{children}</div>
     </div>
   );
 }
 
-function AlertBadge({ alert }) {
-  const color = alert.severity === "critical" ? C.red : C.yellow;
+function PageHead({ eyebrow, title, sub, children }) {
   return (
-    <div
-      style={{
-        background: `${color}15`,
-        border: `1px solid ${color}40`,
-        borderRadius: 6,
-        padding: "10px 14px",
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        marginBottom: 8,
-      }}
-    >
-      <span style={{ fontSize: 16 }}>
-        {alert.severity === "critical" ? "🚨" : "⚠️"}
-      </span>
+    <div className="page-head">
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color }}>
-          {alert.param}
-        </div>
-        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-          {alert.message}
-        </div>
+        <div className="eyebrow">{eyebrow}</div>
+        <h1 className="page-title">{title}</h1>
+        {sub && <p className="page-sub">{sub}</p>}
       </div>
+      {children}
     </div>
   );
 }
 
-function Gauge({ value, max = 1, label, color }) {
-  const pct = Math.max(0, Math.min(value / max, 1));
-  const radius = 50;
-  const circumference = 2 * Math.PI * radius;
-  const arcLength = (270 / 360) * circumference; // 270-degree visible arc
-  const offset = arcLength - pct * arcLength;
-
+function EmptyState({ title, sub, onAction }) {
   return (
-    <div style={{ textAlign: "center" }}>
-      <svg viewBox="0 0 120 120" width={120} height={120}>
-        {/* Background track */}
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke={C.border}
-          strokeWidth={10}
-          strokeDasharray={`${arcLength} ${circumference}`}
-          strokeDashoffset={0}
-          strokeLinecap="round"
-          transform="rotate(-135 60 60)"
-        />
-        {/* Progress arc */}
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={10}
-          strokeDasharray={`${arcLength} ${circumference}`}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform="rotate(-135 60 60)"
-          style={{ transition: "stroke-dashoffset 0.4s ease" }}
-        />
-        {/* Percentage text */}
-        <text
-          x="60"
-          y="68"
-          textAnchor="middle"
-          fill={color}
-          fontSize={24}
-          fontWeight="700"
-          fontFamily="Poppins, sans-serif"
-        >
-          {Math.round(pct * 100)}%
-        </text>
-      </svg>
-      <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{label}</div>
+    <div className="box empty">
+      <div className="empty-icon">+</div>
+      <div className="empty-title">{title}</div>
+      <div className="empty-sub">{sub}</div>
+      <button className="btn sm" onClick={onAction}>
+        Go to vitals <span className="arrow">→</span>
+      </button>
     </div>
   );
 }
@@ -301,13 +260,14 @@ export default function VitalDashboard() {
   const [form, setForm] = useState(DEFAULTS);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    !!localStorage.getItem("token"),
-  );
+  // Signed-in username (null = signed out). The stored token is re-validated on load.
+  const [user, setUser] = useState(() => (session.token ? session.username || "user" : null));
+  const [view, setView] = useState("home"); // signed-out screens: home | login | register
   const [history, setHistory] = useState([]);
   const [tab, setTab] = useState("input"); // input | results | history
   const [error, setError] = useState(null);
   const [demoMode, setDemoMode] = useState(true);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const ecgData = generateECG(form.ecg_qt_interval_ms, form.heart_rate);
 
@@ -371,13 +331,7 @@ export default function VitalDashboard() {
         await new Promise((r) => setTimeout(r, 800));
         data = simulatePredict(form);
       } else {
-        const res = await fetch("http://localhost:8000/predict", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
-        });
-        if (!res.ok) throw new Error(`API error ${res.status}`);
-        data = await res.json();
+        data = await api("/predict", { method: "POST", body: form });
       }
       setResult(data);
       setHistory((h) =>
@@ -396,7 +350,8 @@ export default function VitalDashboard() {
       );
       setTab("results");
     } catch (e) {
-      setError("Could not reach API. Enable Demo Mode or start the backend.");
+      if (e.status === 401) return signOut({ remote: false });
+      setError(e.status === 0 ? `${e.message} — or switch Demo mode on.` : e.message);
     } finally {
       setLoading(false);
     }
@@ -404,38 +359,43 @@ export default function VitalDashboard() {
 
   function generatePdfFromData() {
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const title = "MedPredict Health Risk Report";
     const date = new Date().toLocaleString();
 
-    let y = 15;
-    pdf.setFontSize(16);
-    pdf.setTextColor("#28a745");
-    pdf.text(title, 14, y);
+    let y = 18;
+    pdf.setTextColor("#000000");
+    pdf.setFontSize(18);
+    pdf.setFont(undefined, "bold");
+    pdf.text("MEDPREDICT — HEALTH RISK REPORT", 14, y);
+    pdf.setFont(undefined, "normal");
 
-    y += 8;
-    pdf.setFontSize(10);
-    pdf.setTextColor("#b0b8c1");
+    y += 7;
+    pdf.setFontSize(9);
+    pdf.setTextColor("#6b6b6b");
     pdf.text(`Generated: ${date}`, 14, y);
 
-    y += 10;
-    pdf.setDrawColor("#28314e");
-    pdf.setFillColor("#0f172a");
-    pdf.rect(12, y - 4, 186, 6, "F");
-    pdf.setTextColor("#9ca3af");
-    pdf.setFontSize(11);
-    pdf.text("Patient Input Parameters", 14, y + 1);
+    const sectionHeader = (label) => {
+      pdf.setFillColor("#000000");
+      pdf.rect(12, y - 5, 186, 8, "F");
+      pdf.setTextColor("#ffffff");
+      pdf.setFontSize(10);
+      pdf.setFont(undefined, "bold");
+      pdf.text(label.toUpperCase(), 14, y);
+      pdf.setFont(undefined, "normal");
+      pdf.setTextColor("#000000");
+    };
 
+    y += 12;
+    sectionHeader("Patient input parameters");
     y += 10;
     pdf.setFontSize(10);
-    pdf.setTextColor("#e5e7eb");
 
     const fields = [
       ["Heart Rate", `${form.heart_rate} bpm`],
-      ["Resp Rate", `${form.resp_rate} /min`],
+      ["Resp Rate", `${form.respiratory_rate} /min`],
       ["Systolic BP", `${form.systolic_bp} mmHg`],
       ["Diastolic BP", `${form.diastolic_bp} mmHg`],
       ["SpO2", `${form.oxygen_saturation} %`],
-      ["Temperature", `${form.body_temperature} °C`],
+      ["Temperature", `${form.body_temperature} C`],
       ["Height", `${form.height_m} m`],
       ["Weight", `${form.weight_kg} kg`],
       ["ECG QT", `${form.ecg_qt_interval_ms} ms`],
@@ -443,7 +403,7 @@ export default function VitalDashboard() {
     ];
 
     fields.forEach(([label, value]) => {
-      pdf.text(`${label}:`, 14, y);
+      pdf.text(`${label}`, 14, y);
       pdf.text(`${value}`, 90, y);
       y += 6;
       if (y > 260) {
@@ -452,27 +412,25 @@ export default function VitalDashboard() {
       }
     });
 
-    y += 6;
-    pdf.setDrawColor("#28314e");
-    pdf.setFillColor("#0f172a");
-    pdf.rect(12, y - 4, 186, 6, "F");
-    pdf.setTextColor("#9ca3af");
-    pdf.text("Model Prediction", 14, y + 1);
-
-    y += 10;
-    pdf.setFontSize(12);
-    pdf.setTextColor(result.risk_category === "High Risk" ? "#f87171" : "#34d399");
-    pdf.text(`${result.risk_category} (${(result.confidence * 100).toFixed(1)}%)`, 14, y);
-
     y += 8;
+    sectionHeader("Model prediction");
+
+    y += 11;
+    pdf.setFontSize(14);
+    pdf.setFont(undefined, "bold");
+    pdf.setTextColor(result.risk_category === "High Risk" ? "#e10600" : "#000000");
+    pdf.text(`${result.risk_category.toUpperCase()} (${(result.confidence * 100).toFixed(1)}%)`, 14, y);
+    pdf.setFont(undefined, "normal");
+
+    y += 7;
     pdf.setFontSize(10);
-    pdf.setTextColor("#e5e7eb");
+    pdf.setTextColor("#000000");
     pdf.text(`Model: ${result.model_info.type} · Accuracy: ${(result.model_info.accuracy * 100).toFixed(1)}%`, 14, y);
 
+    y += 12;
+    sectionHeader("Clinical alerts");
     y += 10;
     const alerts = result.alerts.length ? result.alerts : [{ param: "All vitals within normal range", message: "No alerts" }];
-    pdf.text("Clinical Alerts:", 14, y);
-    y += 6;
     alerts.forEach((a) => {
       if (y > 280) {
         pdf.addPage();
@@ -482,93 +440,86 @@ export default function VitalDashboard() {
       y += 6;
     });
 
-    const filename = `MedPredict-Report-${new Date().toISOString().split("T")[0]}.pdf`;
-    pdf.save(filename);
+    pdf.save(`MedPredict-Report-${new Date().toISOString().split("T")[0]}.pdf`);
   }
 
-  const downloadPDF = async (event) => {
-    const button = event?.currentTarget;
-    const originalText = button?.textContent;
-    if (button) {
-      button.textContent = "⏳ Generating PDF...";
-      button.disabled = true;
-    }
-
-    if (!result) {
-      alert("Please run prediction before downloading a report.");
-      if (button) {
-        button.textContent = originalText || "📥 Download as PDF";
-        button.disabled = false;
-      }
-      return;
-    }
-
+  const downloadPDF = async () => {
+    if (!result) return;
+    setPdfBusy(true);
     try {
-      if (typeof html2canvas === "function") {
-        try {
-          const element = document.getElementById("prediction-report");
-          if (!element) {
-            throw new Error("Report element not found");
-          }
+      try {
+        const element = document.getElementById("prediction-report");
+        if (!element) throw new Error("Report element not found");
 
-          const canvas = await html2canvas(element, {
-            scale: 2,
-            backgroundColor: "#0d1117",
-            useCORS: true,
-            logging: false,
-          });
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          useCORS: true,
+          logging: false,
+        });
 
-          if (canvas) {
-            const imgData = canvas.toDataURL("image/png");
-            const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const imgWidth = pageWidth - 16;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const imgWidth = pageWidth - 16;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-            pdf.addImage(imgData, "PNG", 8, 8, imgWidth, imgHeight);
-            pdf.save(`MedPredict-Report-${new Date().toISOString().split("T")[0]}.pdf`);
-            return;
-          }
-
-          throw new Error("html2canvas produced no canvas");
-        } catch (captureError) {
-          console.warn("html2canvas capture failed, using data-only PDF", captureError);
-        }
-      } else {
-        console.warn("html2canvas is unavailable, using data-only PDF");
+        pdf.addImage(imgData, "PNG", 8, 8, imgWidth, imgHeight);
+        pdf.save(`MedPredict-Report-${new Date().toISOString().split("T")[0]}.pdf`);
+        return;
+      } catch (captureError) {
+        console.warn("html2canvas capture failed, using data-only PDF", captureError);
       }
-
       generatePdfFromData();
-    } catch (error) {
-      console.error("Failed to generate PDF", error);
-      alert("Failed to generate PDF. Please check console for details and try again.");
+    } catch (err) {
+      console.error("Failed to generate PDF", err);
+      setError("Failed to generate PDF. Check the console for details.");
     } finally {
-      if (button) {
-        button.textContent = originalText || "📥 Download as PDF";
-        button.disabled = false;
-      }
+      setPdfBusy(false);
     }
   };
 
+  // Validate a stored session once on load; drop it if the server rejects it.
+  useEffect(() => {
+    if (!session.token) return;
+    api("/me")
+      .then((me) => setUser(me.username))
+      .catch((e) => {
+        if (e.status === 401) signOut({ remote: false });
+        // status 0 = backend offline: keep the session so Demo mode still works.
+      });
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [view, user]);
+
+  function signOut({ remote = true } = {}) {
+    if (remote) api("/logout", { method: "POST" }).catch(() => {});
+    session.clear();
+    setUser(null);
+    setView("home");
+    // Don't leak one user's session data to the next person who signs in.
+    setResult(null);
+    setHistory([]);
+    setForm(DEFAULTS);
+    setTab("input");
+    setError(null);
+    setLoading(false);
+  }
+
+  function handleSignedIn(username) {
+    setUser(username);
+    setTab("input");
+  }
+
   const radarData = result
     ? [
-        {
-          axis: "Heart Rate",
-          value: Math.min((form.heart_rate / 100) * 100, 100),
-        },
+        { axis: "Heart Rate", value: Math.min((form.heart_rate / 100) * 100, 100) },
         { axis: "SpO₂", value: form.oxygen_saturation },
-        {
-          axis: "Temperature",
-          value: Math.min(((form.body_temperature - 34) / 8) * 100, 100),
-        },
-        {
-          axis: "Systolic BP",
-          value: Math.min((form.systolic_bp / 180) * 100, 100),
-        },
-        {
-          axis: "ECG QT",
-          value: Math.min((form.ecg_qt_interval_ms / 500) * 100, 100),
-        },
+        { axis: "Temp", value: Math.min(((form.body_temperature - 34) / 8) * 100, 100) },
+        { axis: "Systolic", value: Math.min((form.systolic_bp / 180) * 100, 100) },
+        { axis: "ECG QT", value: Math.min((form.ecg_qt_interval_ms / 500) * 100, 100) },
       ]
     : [];
 
@@ -581,949 +532,420 @@ export default function VitalDashboard() {
     { name: "SpO₂", value: 0.6 },
   ];
 
-  const riskColor = result?.risk_category === "High Risk" ? C.red : C.green;
-  if (!isAuthenticated) {
-    return <Login onLogin={() => setIsAuthenticated(true)} />;
+  const liveVitals = [
+    { label: "Heart Rate", value: form.heart_rate, unit: "bpm", range: NORMAL.heart_rate },
+    { label: "SpO₂", value: form.oxygen_saturation, unit: "%", range: NORMAL.oxygen_saturation },
+    { label: "Temperature", value: form.body_temperature, unit: "°C", range: NORMAL.body_temperature },
+    { label: "Systolic BP", value: form.systolic_bp, unit: "mmHg", range: NORMAL.systolic_bp },
+    { label: "Diastolic BP", value: form.diastolic_bp, unit: "mmHg", range: NORMAL.diastolic_bp },
+    { label: "ECG QT", value: form.ecg_qt_interval_ms, unit: "ms", range: NORMAL.ecg_qt_interval_ms },
+  ];
+
+  const derivedLive = [
+    { label: "BMI", value: (form.weight_kg / form.height_m ** 2).toFixed(1) },
+    { label: "MAP mmHg", value: (form.diastolic_bp + (form.systolic_bp - form.diastolic_bp) / 3).toFixed(1) },
+    { label: "PP mmHg", value: (form.systolic_bp - form.diastolic_bp).toFixed(0) },
+    { label: "HRV ms", value: Math.max(0, 50 - (form.heart_rate - 60) * 0.3).toFixed(1) },
+  ];
+
+  const setField = (key, v) => setForm((p) => ({ ...p, [key]: v }));
+  const isHigh = result?.risk_category === "High Risk";
+
+  if (!user) {
+    if (view === "home") {
+      return <Home onSignIn={() => setView("login")} onGetStarted={() => setView("register")} />;
+    }
+    return (
+      <Login
+        key={view}
+        initialMode={view}
+        onLogin={handleSignedIn}
+        onBack={() => setView("home")}
+      />
+    );
   }
+
+  const TABS = [
+    { id: "input", label: "Vitals" },
+    { id: "results", label: "Prediction" },
+    { id: "history", label: "History" },
+  ];
+  const username = user;
+  const outCount = liveVitals.filter((v) => isOut(v.value, v.range)).length;
+  const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+
   return (
-    <>
-      <div className="min-h-screen bg-gradient-to-br from-[#0d1117] via-[#0f172a] to-[#020617] text-white">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <div className="text-2xl">🫀</div>
-            <div>
-              <h1 className="text-lg font-semibold">MedPredict</h1>
-              <p className="text-xs text-gray-400">
-                AI-powered health risk prediction
-              </p>
-            </div>
-          </div>
+    <div className="app">
+      {/* Floating header */}
+      <header className="header">
+        <div className="wrap">
+          <div className="header-bar">
+            <Brand onClick={() => setTab("input")} />
 
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-400">Demo Mode</span>
+            <nav className="segmented" aria-label="Sections">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  className={`seg${tab === t.id ? " active" : ""}`}
+                  onClick={() => setTab(t.id)}
+                  aria-current={tab === t.id ? "page" : undefined}
+                >
+                  <span className="lbl">{t.label}</span>
+                  {t.id === "history" && history.length > 0 && <span className="count">{history.length}</span>}
+                </button>
+              ))}
+            </nav>
 
-            <div className="w-10 h-5 bg-blue-500 rounded-full relative">
-              <div className="w-4 h-4 bg-white rounded-full absolute top-0.5 right-0.5" />
-            </div>
-
-            <div className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-medium border border-green-500/30">
-              ● READY
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div
-          className="w-full max-w-6xl mx-auto mt-6"
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 2,
-            padding: "0 24px",
-            background: C.surface,
-            borderBottom: `1px solid ${C.border}`,
-          }}
-        >
-          {["input", "results", "history"].map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                background: "none",
-                border: "none",
-                color: tab === t ? C.accent : C.muted,
-                borderBottom:
-                  tab === t ? `2px solid ${C.accent}` : "2px solid transparent",
-                padding: "10px 18px",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 500,
-                textTransform: "capitalize",
-              }}
-            >
-              {t === "input"
-                ? "📋 Vitals Input"
-                : t === "results"
-                  ? "🔬 Prediction"
-                  : "📈 History"}
-            </button>
-          ))}
-        </div>
-
-        <div className="max-w-7xl mx-auto px-6 py-10 flex flex-col items-center">
-          {/* ── INPUT TAB ─────────────────────────────────────────────────── */}
-          {tab === "input" && (
-            <div className="w-full flex justify-center pt-8">
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 24,
-                  justifyContent: "center",
-                }}
+            <div className="header-actions">
+              <button
+                className={`toggle${demoMode ? " on" : ""}`}
+                onClick={() => setDemoMode((d) => !d)}
+                aria-pressed={demoMode}
+                title="Use local simulation instead of the API"
               >
+                Demo
+                <span className="toggle-track">
+                  <span className="toggle-thumb" />
+                </span>
+              </button>
+              <span className="pill dark">
+                <span className="dot" /> {demoMode ? "Local" : "API"}
+              </span>
+              <div className="user" title={username}>
+                <span className="avatar">{username.slice(0, 2)}</span>
+              </div>
+              <button className="btn ghost sm" onClick={() => signOut()}>
+                Log out
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="main">
+        <div className="wrap page" key={tab}>
+          {/* ── INPUT TAB ─────────────────────────────────────────────── */}
+          {tab === "input" && (
+            <>
+              <PageHead
+                eyebrow={today}
+                title={
+                  <>
+                    Patient <em>assessment</em>
+                  </>
+                }
+                sub="Adjust the vital signs below. The preview updates live — run the model when you're ready."
+              >
+                <div className="summary">
+                  <span className={`pill ${outCount ? "bad" : "ok"}`}>
+                    {outCount ? `${outCount} out of range` : "All vitals normal"}
+                  </span>
+                  <button className="pill soft" style={{ cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600 }} onClick={() => setForm(DEFAULTS)}>
+                    ↺ Reset
+                  </button>
+                </div>
+              </PageHead>
+
+              <div className="grid-2">
                 {/* Form */}
                 <div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: C.muted,
-                      marginBottom: 18,
-                      letterSpacing: 2,
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      marginTop: 24,
-                    }}
-                  >
-                    PATIENT VITAL PARAMETERS
+                  <div className="section-title">
+                    <span>Vital parameters</span>
+                    <span className="mono" style={{ fontSize: 12, fontWeight: 500, color: C.muted }}>
+                      {FIELD_META.length} inputs
+                    </span>
                   </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 10,
-                    }}
-                  >
-                    {FIELD_META.map((f) => (
-                      <div
-                        key={f.key}
-                        style={{
-                          background:
-                            "linear-gradient(145deg, #161b22, #0d1117)",
-                          border: "1px solid #21262d",
-                          borderRadius: 12,
-                          padding: "16px",
-                          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-                          transition: "all 0.2s ease",
-                        }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.transform = "translateY(-3px)")
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.transform = "translateY(0)")
-                        }
-                      >
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: C.muted,
-                            marginBottom: 6,
-                            letterSpacing: 0.8,
-                          }}
-                        >
-                          {f.label.toUpperCase()} ({f.unit})
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 6,
-                              width: "100%",
-                            }}
-                          >
-                            <input
-                              type="range"
-                              min={f.min}
-                              max={f.max}
-                              step={f.step}
-                              value={form[f.key]}
-                              onChange={(e) =>
-                                setForm((p) => ({
-                                  ...p,
-                                  [f.key]: parseFloat(e.target.value),
-                                }))
-                              }
-                              className="custom-slider"
-                            />
-
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                              }}
-                            >
-                              <span style={{ fontSize: 10, color: "#8b949e" }}>
-                                {f.min}
-                              </span>
-
-                              <span
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: 600,
-                                  color: "#58a6ff",
-                                  fontFamily: "Poppins, sans-serif",
-                                }}
-                              >
-                                {form[f.key]} {f.unit}
-                              </span>
-
-                              <span style={{ fontSize: 10, color: "#8b949e" }}>
-                                {f.max}
-                              </span>
-                            </div>
+                  <div className="fields">
+                    {FIELD_META.map((f) => {
+                      const p = ((form[f.key] - f.min) / (f.max - f.min)) * 100;
+                      return (
+                        <label key={f.key} className="field">
+                          <div className="field-top">
+                            <span className="field-label">{f.label}</span>
+                            <span className="field-unit">{f.unit}</span>
                           </div>
-
                           <input
                             type="number"
+                            className="field-num"
                             min={f.min}
                             max={f.max}
                             step={f.step}
                             value={form[f.key]}
-                            onChange={(e) =>
-                              setForm((p) => ({
-                                ...p,
-                                [f.key]: parseFloat(e.target.value) || 0,
-                              }))
-                            }
-                            style={{
-                              width: 60,
-                              background: C.bg,
-                              border: `1px solid ${C.border}`,
-                              color: C.text,
-                              borderRadius: 4,
-                              padding: "4px 6px",
-                              fontSize: 12,
-                              textAlign: "right",
-                            }}
+                            onChange={(e) => setField(f.key, parseFloat(e.target.value) || 0)}
+                            aria-label={`${f.label} value`}
                           />
-                        </div>
-                      </div>
-                    ))}
+                          <input
+                            type="range"
+                            min={f.min}
+                            max={f.max}
+                            step={f.step}
+                            value={form[f.key]}
+                            onChange={(e) => setField(f.key, parseFloat(e.target.value))}
+                            aria-label={f.label}
+                            style={{ "--p": `${Math.max(0, Math.min(100, p))}%` }}
+                          />
+                          <div className="field-range">
+                            <span>{f.min}</span>
+                            <span>{f.max}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
                   </div>
-                  {error && (
-                    <div
-                      style={{
-                        background: C.red + "15",
-                        border: `1px solid ${C.red}40`,
-                        borderRadius: 6,
-                        padding: "10px 14px",
-                        marginTop: 12,
-                        color: C.red,
-                        fontSize: 12,
-                      }}
-                    >
-                      ⚠️ {error}
-                    </div>
-                  )}
+
+                  {error && <div className="error">{error}</div>}
+
                   <button
+                    className="btn lg"
                     onClick={handlePredict}
                     disabled={loading}
-                    className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 hover:opacity-90 font-semibold transition"
-                    style={{
-                      marginTop: 14,
-                      width: "100%",
-                      color: "#0d1117",
-                      border: "none",
-                      borderRadius: 8,
-                      padding: "13px 0",
-                      fontSize: 14,
-                      fontWeight: 700,
-                      cursor: loading ? "not-allowed" : "pointer",
-                      opacity: loading ? 0.7 : 1,
-                      letterSpacing: 0.5,
-                    }}
+                    style={{ marginTop: 24 }}
                   >
-                    {loading ? "🔄 Analyzing..." : "🔬 Predict Health Risk"}
+                    {loading ? "Analyzing…" : "Predict health risk"}
+                    {!loading && <span className="arrow">→</span>}
                   </button>
                 </div>
 
-                {/* Live vitals preview + ECG */}
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                >
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: C.muted,
-                      letterSpacing: 2,
-                      marginBottom: 16,
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      marginTop: 24,
-                    }}
-                  >
-                    LIVE VITALS PREVIEW
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 8,
-                    }}
-                  >
-                    {[
-                      {
-                        label: "Heart Rate",
-                        value: form.heart_rate,
-                        unit: "bpm",
-                        range: NORMAL.heart_rate,
-                      },
-                      {
-                        label: "SpO₂",
-                        value: form.oxygen_saturation,
-                        unit: "%",
-                        range: NORMAL.oxygen_saturation,
-                      },
-                      {
-                        label: "Temperature",
-                        value: form.body_temperature,
-                        unit: "°C",
-                        range: NORMAL.body_temperature,
-                      },
-                      {
-                        label: "Systolic BP",
-                        value: form.systolic_bp,
-                        unit: "mmHg",
-                        range: NORMAL.systolic_bp,
-                      },
-                      {
-                        label: "Diastolic BP",
-                        value: form.diastolic_bp,
-                        unit: "mmHg",
-                        range: NORMAL.diastolic_bp,
-                      },
-                      {
-                        label: "ECG QT",
-                        value: form.ecg_qt_interval_ms,
-                        unit: "ms",
-                        range: NORMAL.ecg_qt_interval_ms,
-                      },
-                    ].map((v) => (
-                      <VitalCard key={v.label} {...v} />
-                    ))}
-                  </div>
-
-                  {/* ECG preview */}
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md shadow-lg">
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: C.green,
-                        marginBottom: 10,
-                        letterSpacing: 1.2,
-                        fontWeight: 600,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      ● ECG WAVEFORM SIMULATION (QT={form.ecg_qt_interval_ms}ms,
-                      HR={form.heart_rate}bpm)
+                {/* Live preview */}
+                <div className="stack">
+                  <div>
+                    <div className="section-title">
+                      <span>Live vitals</span>
+                      <span className="pill dark" style={{ fontSize: 11, padding: "3px 10px" }}>
+                        <span className="dot" /> Live
+                      </span>
                     </div>
-                    <ResponsiveContainer width="100%" height={100}>
-                      <LineChart data={ecgData}>
-                        <Line
-                          type="monotone"
-                          dataKey="v"
-                          stroke={C.green}
-                          strokeWidth={1.5}
-                          dot={false}
-                        />
-                        <ReferenceLine
-                          y={0}
-                          stroke={C.border}
-                          strokeDasharray="2 2"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* BMI display */}
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md shadow-lg">
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: C.muted,
-                        marginBottom: 8,
-                        letterSpacing: 1.2,
-                        fontWeight: 600,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      DERIVED METRICS
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                        gap: 10,
-                      }}
-                    >
-                      {[
-                        {
-                          label: "BMI",
-                          value: (form.weight_kg / form.height_m ** 2).toFixed(
-                            1,
-                          ),
-                          unit: "",
-                        },
-                        {
-                          label: "MAP",
-                          value: (
-                            form.diastolic_bp +
-                            (form.systolic_bp - form.diastolic_bp) / 3
-                          ).toFixed(1),
-                          unit: "mmHg",
-                        },
-                        {
-                          label: "PP",
-                          value: (form.systolic_bp - form.diastolic_bp).toFixed(
-                            0,
-                          ),
-                          unit: "mmHg",
-                        },
-                        {
-                          label: "HRV",
-                          value: Math.max(
-                            0,
-                            50 - (form.heart_rate - 60) * 0.3,
-                          ).toFixed(1),
-                          unit: "ms",
-                        },
-                      ].map((m) => (
-                        <div key={m.label} style={{ textAlign: "center" }}>
-                          <div
-                            style={{
-                              fontSize: 18,
-                              fontWeight: 700,
-                              color: C.accent,
-                              fontFamily: "Poppins, sans-serif",
-                            }}
-                          >
-                            {m.value}
-                          </div>
-                          <div style={{ fontSize: 10, color: C.muted }}>
-                            {m.label} {m.unit}
-                          </div>
-                        </div>
+                    <div className="vitals">
+                      {liveVitals.map((v) => (
+                        <VitalCard key={v.label} {...v} />
                       ))}
                     </div>
                   </div>
+
+                  <Box
+                    className="lift"
+                    bodyClass="box-body ecg-paper"
+                    title="ECG simulation"
+                    meta={`QT ${form.ecg_qt_interval_ms}ms · ${form.heart_rate}bpm`}
+                  >
+                    <ResponsiveContainer width="100%" height={120}>
+                      <LineChart data={ecgData}>
+                        <Line
+                          type="linear"
+                          dataKey="v"
+                          stroke={C.ink}
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </Box>
+
+                  <Box className="lift" title="Derived metrics" bodyClass="stats">
+                    {derivedLive.map((m) => (
+                      <div key={m.label} className="stat">
+                        <div className="stat-value">{m.value}</div>
+                        <div className="stat-label">{m.label}</div>
+                      </div>
+                    ))}
+                  </Box>
                 </div>
               </div>
-            </div>
+            </>
           )}
 
-          {/* ── RESULTS TAB ───────────────────────────────────────────────── */}
+          {/* ── RESULTS TAB ───────────────────────────────────────────── */}
           {tab === "results" && (
-            <div style={{ paddingTop: "32px" }}>
-              {!result ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    padding: "60px 0",
-                    color: C.muted,
-                  }}
-                >
-                  <div style={{ fontSize: 40, marginBottom: 16 }}>🔬</div>
-                  <div>Submit vitals to see prediction results</div>
-                  <button
-                    onClick={() => setTab("input")}
-                    className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 hover:opacity-90 font-semibold transition"
-                    style={{
-                      marginTop: 16,
-                      color: C.bg,
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "10px 24px",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Go to Input
+            <>
+              <PageHead
+                eyebrow="Model output"
+                title={
+                  <>
+                    Risk <em>prediction</em>
+                  </>
+                }
+                sub={result ? `${result.model_info.type} · ${result.alerts.length} clinical alert${result.alerts.length === 1 ? "" : "s"}` : undefined}
+              >
+                {result && (
+                  <button className="btn ghost sm" onClick={downloadPDF} disabled={pdfBusy}>
+                    {pdfBusy ? "Generating…" : "Download PDF"} <span className="arrow">↓</span>
                   </button>
-                </div>
+                )}
+              </PageHead>
+
+              {!result ? (
+                <EmptyState
+                  title="No prediction yet"
+                  sub="Enter patient vitals to run an analysis."
+                  onAction={() => setTab("input")}
+                />
               ) : (
-                <>
-                  {/* Download PDF Button - Outside report div */}
-                  <div style={{ marginBottom: 16 }}>
-                    <button
-                      onClick={(e) => downloadPDF(e)}
-                      className="w-full py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 hover:opacity-90 font-semibold transition"
-                      style={{
-                        color: "white",
-                        border: "none",
-                        fontSize: 14,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        padding: "10px 16px",
-                      }}
-                    >
-                      📥 Download as PDF
-                    </button>
-                  </div>
-
-                  <div
-                    id="prediction-report"
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 20,
-                    }}
-                  >
-
-                  {/* Risk result */}
-                  <div
-                    style={{
-                      background: C.surface,
-                      border: `1px solid ${riskColor}40`,
-                      borderRadius: 10,
-                      padding: 24,
-                      borderTop: `4px solid ${riskColor}`,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: C.muted,
-                        letterSpacing: 1,
-                        marginBottom: 12,
-                      }}
-                    >
-                      PREDICTION RESULT
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 16,
-                        marginBottom: 20,
-                      }}
-                    >
-                      <span style={{ fontSize: 44 }}>
-                        {result.risk_category === "High Risk" ? "⚠️" : "✅"}
-                      </span>
-                      <div>
-                        <div
-                          style={{
-                            fontSize: 28,
-                            fontWeight: 800,
-                            color: riskColor,
-                          }}
-                        >
-                          {result.risk_category}
-                        </div>
-                        <div style={{ fontSize: 12, color: C.muted }}>
-                          Confidence: {(result.confidence * 100).toFixed(1)}%
-                        </div>
+                <div id="prediction-report" className="grid-2 even" style={{ background: C.paper, padding: 4 }}>
+                  {/* Verdict */}
+                  <div className="box">
+                    <div className={`verdict ${isHigh ? "high" : "low"}`}>
+                      <div className="verdict-label">Prediction result</div>
+                      <div className="verdict-title">{result.risk_category}</div>
+                      <div className="verdict-sub">
+                        {(result.confidence * 100).toFixed(1)}% confidence
                       </div>
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "center",
-                        gap: 24,
-                        marginBottom: 16,
-                      }}
-                    >
-                      <Gauge
-                        value={result.probabilities["High Risk"]}
-                        max={1}
-                        label="High Risk"
-                        color={C.red}
-                      />
-                      <Gauge
-                        value={result.probabilities["Low Risk"]}
-                        max={1}
-                        label="Low Risk"
-                        color={C.green}
-                      />
+                    <div className="box-body">
+                      <Meter label="High risk" value={result.probabilities["High Risk"]} alert />
+                      <Meter label="Low risk" value={result.probabilities["Low Risk"]} />
                     </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: C.muted,
-                        textAlign: "center",
-                      }}
-                    >
-                      Model: {result.model_info.type} · Accuracy:{" "}
-                      {(result.model_info.accuracy * 100).toFixed(1)}%
+                    <div className="footnote">
+                      {result.model_info.type} · accuracy {(result.model_info.accuracy * 100).toFixed(1)}%
                     </div>
                   </div>
 
                   {/* Alerts */}
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-md shadow-lg">
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: C.muted,
-                        letterSpacing: 1.2,
-                        marginBottom: 16,
-                        marginTop: 4,
-                        fontWeight: 600,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      CLINICAL ALERTS ({result.alerts.length})
-                    </div>
+                  <Box title="Clinical alerts" meta={result.alerts.length} bodyClass="">
                     {result.alerts.length === 0 ? (
-                      <div
-                        style={{
-                          textAlign: "center",
-                          padding: "30px 0",
-                          color: C.green,
-                        }}
-                      >
-                        <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                        <div style={{ fontWeight: 600 }}>
-                          All vitals within normal range
+                      <div className="empty" style={{ padding: "56px 24px" }}>
+                        <div className="empty-icon">✓</div>
+                        <div className="empty-title" style={{ fontSize: 20 }}>All clear</div>
+                        <div className="empty-sub" style={{ marginBottom: 0 }}>
+                          All vitals within normal range.
                         </div>
                       </div>
                     ) : (
-                      <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                      <div className="alert-list" style={{ maxHeight: 340, overflowY: "auto" }}>
                         {result.alerts.map((a, i) => (
-                          <AlertBadge key={i} alert={a} />
+                          <AlertRow key={i} alert={a} />
                         ))}
                       </div>
                     )}
-                  </div>
+                  </Box>
 
-                  {/* Radar chart */}
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-md shadow-lg">
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: C.muted,
-                        letterSpacing: 1.2,
-                        marginBottom: 14,
-                        marginTop: 4,
-                        fontWeight: 600,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      VITAL PARAMETERS RADAR
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
+                  {/* Radar */}
+                  <Box className="lift" title="Vital parameters" meta="normalised">
+                    <ResponsiveContainer width="100%" height={250}>
                       <RadarChart data={radarData}>
-                        <PolarGrid stroke={C.border} />
-                        <PolarAngleAxis
-                          dataKey="axis"
-                          tick={{ fill: C.muted, fontSize: 11 }}
-                        />
-                        <PolarRadiusAxis domain={[0, 100]} tick={false} />
+                        <PolarGrid stroke={C.line} />
+                        <PolarAngleAxis dataKey="axis" tick={AXIS_TICK} />
+                        <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
                         <Radar
                           dataKey="value"
                           stroke={C.accent}
+                          strokeWidth={2}
                           fill={C.accent}
-                          fillOpacity={0.2}
+                          fillOpacity={0.15}
                         />
                       </RadarChart>
                     </ResponsiveContainer>
-                  </div>
+                  </Box>
 
                   {/* Feature importance */}
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-md shadow-lg">
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: C.muted,
-                        letterSpacing: 1.2,
-                        marginBottom: 14,
-                        marginTop: 4,
-                        fontWeight: 600,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      MODEL FEATURE IMPORTANCE
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={importanceData} layout="vertical">
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          stroke={C.border}
-                        />
-                        <XAxis
-                          type="number"
-                          tick={{ fill: C.muted, fontSize: 10 }}
-                        />
+                  <Box className="lift" title="Feature importance" meta="%">
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={importanceData} layout="vertical" margin={{ left: 0, right: 16 }}>
+                        <CartesianGrid horizontal={false} stroke={C.line} />
+                        <XAxis type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} />
                         <YAxis
                           type="category"
                           dataKey="name"
-                          tick={{ fill: C.muted, fontSize: 11 }}
-                          width={50}
+                          tick={AXIS_TICK}
+                          width={60}
+                          axisLine={false}
+                          tickLine={false}
                         />
-                        <Tooltip
-                          contentStyle={{
-                            background: C.surface,
-                            border: `1px solid ${C.border}`,
-                            color: C.text,
-                          }}
-                        />
-                        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                          {importanceData.map((_, i) => (
-                            <Cell
-                              key={i}
-                              fill={
-                                i === 0
-                                  ? C.accent
-                                  : i === 1
-                                    ? C.purple
-                                    : C.muted
-                              }
-                            />
-                          ))}
-                        </Bar>
+                        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: C.soft }} />
+                        <Bar dataKey="value" fill={C.accent} barSize={14} radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
-                  </div>
+                  </Box>
 
                   {/* Derived values */}
-                  <div
-                    style={{
-                      background: C.surface,
-                      border: `1px solid ${C.border}`,
-                      borderRadius: 10,
-                      padding: 24,
-                      gridColumn: "1 / -1",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: C.muted,
-                        letterSpacing: 1,
-                        marginBottom: 14,
-                      }}
-                    >
-                      DERIVED CLINICAL METRICS
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(4, 1fr)",
-                        gap: 14,
-                      }}
-                    >
-                      {Object.entries(result.derived_values).map(([k, v]) => (
-                        <div
-                          key={k}
-                          style={{
-                            background: C.bg,
-                            border: `1px solid ${C.border}`,
-                            borderRadius: 8,
-                            padding: "14px 16px",
-                            textAlign: "center",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 22,
-                              fontWeight: 700,
-                              color: C.accent,
-                              fontFamily: "Poppins, sans-serif",
-                            }}
-                          >
-                            {v}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: C.muted,
-                              marginTop: 4,
-                            }}
-                          >
-                            {k.replace("Derived_", "").replace(/_/g, " ")}
-                          </div>
+                  <Box title="Derived clinical metrics" className="span" bodyClass="stats">
+                    {Object.entries(result.derived_values).map(([k, v]) => (
+                      <div key={k} className="stat">
+                        <div className="stat-value">{v}</div>
+                        <div className="stat-label">
+                          {k.replace("Derived_", "").replace(/_/g, " ")}
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                      </div>
+                    ))}
+                  </Box>
                 </div>
-                </>
               )}
-            </div>
+            </>
           )}
 
-          {/* ── HISTORY TAB ───────────────────────────────────────────────── */}
+          {/* ── HISTORY TAB ───────────────────────────────────────────── */}
           {tab === "history" && (
-            <div style={{ paddingTop: "32px" }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: C.muted,
-                  letterSpacing: 1,
-                  marginBottom: 14,
-                }}
-              >
-                PREDICTION HISTORY ({history.length} records)
-              </div>
+            <>
+              <PageHead
+                eyebrow="This session"
+                title={
+                  <>
+                    Prediction <em>history</em>
+                  </>
+                }
+                sub={history.length ? `${history.length} of the last 20 runs are kept for this session.` : undefined}
+              />
+
               {history.length === 0 ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    padding: "60px 0",
-                    color: C.muted,
-                  }}
-                >
-                  No predictions yet. Run your first analysis.
-                </div>
+                <EmptyState
+                  title="No history"
+                  sub="Run your first analysis to start a record."
+                  onAction={() => setTab("input")}
+                />
               ) : (
-                <>
-                  {/* Trend chart */}
-                  <div
-                    style={{
-                      background: C.surface,
-                      border: `1px solid ${C.border}`,
-                      borderRadius: 10,
-                      padding: 20,
-                      marginBottom: 16,
-                    }}
-                  >
-                    <div
-                      style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}
-                    >
-                      HR & SpO₂ TRENDS
-                    </div>
-                    <ResponsiveContainer width="100%" height={160}>
+                <div className="stack">
+                  <Box title="HR & SpO₂ trend" meta={`${history.length} records`}>
+                    <ResponsiveContainer width="100%" height={220}>
                       <LineChart data={[...history].reverse()}>
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          stroke={C.border}
-                        />
-                        <XAxis
-                          dataKey="time"
-                          tick={{ fill: C.muted, fontSize: 10 }}
-                        />
-                        <YAxis tick={{ fill: C.muted, fontSize: 10 }} />
-                        <Tooltip
-                          contentStyle={{
-                            background: C.surface,
-                            border: `1px solid ${C.border}`,
-                            color: C.text,
-                          }}
-                        />
-                        <Line
-                          dataKey="hr"
-                          stroke={C.red}
-                          strokeWidth={2}
-                          dot={false}
-                          name="Heart Rate"
-                        />
+                        <CartesianGrid vertical={false} stroke={C.line} />
+                        <XAxis dataKey="time" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                        <Line dataKey="hr" stroke={C.alert} strokeWidth={2} dot={{ r: 3, fill: C.alert }} name="Heart rate" />
                         <Line
                           dataKey="spo2"
                           stroke={C.accent}
                           strokeWidth={2}
-                          dot={false}
+                          dot={{ r: 3, fill: C.accent }}
                           name="SpO₂"
                         />
                       </LineChart>
                     </ResponsiveContainer>
-                  </div>
+                  </Box>
 
-                  {/* Table */}
-                  <div
-                    style={{
-                      background: C.surface,
-                      border: `1px solid ${C.border}`,
-                      borderRadius: 10,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <table
-                      style={{ width: "100%", borderCollapse: "collapse" }}
-                    >
+                  <div className="box">
+                    <table className="table">
                       <thead>
-                        <tr style={{ background: C.bg }}>
-                          {[
-                            "Time",
-                            "Risk",
-                            "Confidence",
-                            "HR",
-                            "SpO₂",
-                            "Temp",
-                            "SBP",
-                          ].map((h) => (
-                            <th
-                              key={h}
-                              style={{
-                                padding: "10px 14px",
-                                textAlign: "left",
-                                fontSize: 11,
-                                color: C.muted,
-                                fontWeight: 500,
-                                letterSpacing: 0.8,
-                                borderBottom: `1px solid ${C.border}`,
-                              }}
-                            >
-                              {h}
-                            </th>
+                        <tr>
+                          {["Time", "Risk", "Confidence", "HR", "SpO₂", "Temp", "SBP"].map((h) => (
+                            <th key={h}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {history.map((row, i) => (
-                          <tr
-                            key={i}
-                            style={{ borderBottom: `1px solid ${C.border}` }}
-                          >
-                            <td
-                              style={{
-                                padding: "10px 14px",
-                                color: C.muted,
-                                fontFamily: "Poppins, sans-serif",
-                                fontSize: 12,
-                              }}
-                            >
-                              {row.time}
+                          <tr key={i}>
+                            <td className="mono">{row.time}</td>
+                            <td>
+                              <span className={`pill ${row.risk === "High Risk" ? "bad" : "ok"}`}>{row.risk}</span>
                             </td>
-                            <td style={{ padding: "10px 14px" }}>
-                              <span
-                                style={{
-                                  background:
-                                    (row.risk === "High Risk"
-                                      ? C.red
-                                      : C.green) + "20",
-                                  color:
-                                    row.risk === "High Risk" ? C.red : C.green,
-                                  border: `1px solid ${row.risk === "High Risk" ? C.red : C.green}40`,
-                                  borderRadius: 4,
-                                  padding: "2px 8px",
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {row.risk}
-                              </span>
-                            </td>
-                            <td
-                              style={{
-                                padding: "10px 14px",
-                                color: C.text,
-                                fontFamily: "Poppins, sans-serif",
-                              }}
-                            >
-                              {(row.confidence * 100).toFixed(1)}%
-                            </td>
-                            <td style={{ padding: "10px 14px", color: C.text }}>
-                              {row.hr}
-                            </td>
-                            <td style={{ padding: "10px 14px", color: C.text }}>
-                              {row.spo2}
-                            </td>
-                            <td style={{ padding: "10px 14px", color: C.text }}>
-                              {row.temp}
-                            </td>
-                            <td style={{ padding: "10px 14px", color: C.text }}>
-                              {row.sbp}
-                            </td>
+                            <td>{(row.confidence * 100).toFixed(1)}%</td>
+                            <td>{row.hr}</td>
+                            <td>{row.spo2}</td>
+                            <td>{row.temp}</td>
+                            <td>{row.sbp}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </>
+                </div>
               )}
-            </div>
+            </>
           )}
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }

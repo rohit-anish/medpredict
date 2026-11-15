@@ -29,10 +29,16 @@ vital-app/
     └── package.json
 ```
 
-## 🔐 Demo Credentials during run
+## 🔐 Accounts
 
-Username: admin  
-Password: admin123
+Register any username (3–32 characters) and password (6+ characters) from **Create account**.
+Registering signs you in.
+
+- Locally, accounts are stored in `backend/medpredict.db` (SQLite, created automatically, git-ignored).
+  In production they go in Postgres via `DATABASE_URL` (see [DEPLOY.md](DEPLOY.md)).
+- Passwords are hashed with salted PBKDF2; logins issue a random session token valid for 7 days.
+- The backend must be running to register or sign in. `/predict` requires a signed-in user.
+- Auth endpoints: `POST /register`, `POST /login`, `GET /me`, `POST /logout` (see `backend/auth.py`).
 
 ---
 
@@ -56,15 +62,22 @@ python train_model.py
 
 ### STEP 2 — Start the Backend API
 
+The trained model is already in `backend/model_artifacts/`, so you can skip Step 1 unless you retrain.
+
 ```bash
 cd backend/
+
+# One-time setup: a virtual environment with the pinned dependencies
+python -m venv .venv
+.venv\Scripts\activate          # Windows   (macOS/Linux: source .venv/bin/activate)
 pip install -r requirements.txt
 
-# Copy model artifacts into backend/
-cp -r ../ml/model_artifacts ./
-
+# Every time
 uvicorn main:app --reload --port 8000
 ```
+
+> The frontend needs this server running for sign-in, registration and API predictions.
+> If the sign-in page says "Can't reach the server", the backend isn't running.
 
 **Test the API:**
 ```bash
